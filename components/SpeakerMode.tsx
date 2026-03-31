@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import TcpSocket from "react-native-tcp-socket";
 
@@ -6,7 +7,36 @@ export default function SpeakerMode() {
   const [hostIp, setHostIp] = useState('');
   const [port, setPort] = useState('8080');
   const [status, setStatus] = useState('Disconnected');
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [socket, setSocket] = useState<TcpSocket.Socket | null>(null);
+
+  const player = useAudioPlayer(
+    streamUrl ? { uri: streamUrl } : null
+  );
+  const audioStatus = useAudioPlayerStatus(player);
+
+  const playerRef = useRef(player);
+  useEffect(() => {
+    playerRef.current = player;
+  }, [player]);
+
+  const streamUrlRef = useRef(streamUrl);
+  useEffect(() => {
+    streamUrlRef.current = streamUrl;
+  }, [streamUrl]);
+
+  useEffect(() => {
+    console.log("Speaker Player Status:", JSON.stringify(audioStatus));
+  }, [audioStatus]);
+
+  useEffect(() => {
+    // Let speaker play in background too
+    setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: true,
+      interruptionMode: 'mixWithOthers'
+    });
+  }, []);
 
   const connectToHost = () => {
     if (!hostIp) {
@@ -31,7 +61,24 @@ export default function SpeakerMode() {
     });
 
     client.on('data', function (data) {
-      console.log('message was received', data);
+      const msg = data.toString();
+      console.log('message was received', msg);
+
+      if (msg === 'New file') {
+        setStreamUrl(`http://${hostIp}:8082/stream.mp3?t=${Date.now()}`);
+      } else if (msg.startsWith('Playing audio')) {
+        if (!streamUrlRef.current) {
+          setStreamUrl(`http://${hostIp}:8082/stream.mp3?t=${Date.now()}`);
+        }
+        playerRef.current.play();
+      } else if (msg.startsWith('Stopping audio')) {
+        playerRef.current.pause();
+        const split = msg.split('|');
+        if (split[1]) {
+          const hostTime = parseFloat(split[1]);
+          playerRef.current.seekTo(hostTime);
+        }
+      }
     });
 
     client.on('error', function (error) {
