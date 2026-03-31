@@ -8,7 +8,9 @@ import TcpSocket from 'react-native-tcp-socket';
 
 export default function HostMode() {
     const [selectedFile, setSelectedFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
-    const player = useAudioPlayer(selectedFile ? { uri: selectedFile.uri } : null);
+    const [streamUrl, setStreamUrl] = useState<string | null>(null);
+
+    const player = useAudioPlayer(streamUrl ? { uri: streamUrl } : null);
     const audioStatus = useAudioPlayerStatus(player);
 
     const [server, setServer] = useState<TcpSocket.Server | null>(null);
@@ -151,6 +153,7 @@ export default function HostMode() {
 
             if (!result.canceled && result.assets && result.assets.length > 0) {
                 setSelectedFile(result.assets[0]);
+                setStreamUrl(`http://127.0.0.1:8082/stream.mp3?t=${Date.now()}`);
                 clients.forEach(c => c.write("New file"));
             }
         } catch (error) {
@@ -170,10 +173,8 @@ export default function HostMode() {
                 player.pause();
             } else {
                 clients.forEach(c => c.write("Playing audio"))
-                // Give the TCP packets and speaker decoder a tiny head-start to prevent echo
-                setTimeout(() => {
-                    player.play();
-                }, 175);
+                // Synchronous play without delayed bias, as both Host and Speaker stream via identical HTTP flows
+                player.play();
             }
         } catch (error) {
             Alert.alert('Playback Error', String(error));
